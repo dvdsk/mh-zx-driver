@@ -1,0 +1,11 @@
+[package]
+name = "mh-zx-driver"
+version = "0.1.0"
+authors = ["Constantine Verutin <cverutin@gmail.com>"]
+edition = "2018"
+
+[dependencies.embedded-hal]
+version = "0.2"
+
+[dependencies.nb]
+version = "0.1"
