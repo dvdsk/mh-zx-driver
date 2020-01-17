@@ -9,3 +9,6 @@ version = "0.2"
 
 [dependencies.nb]
 version = "0.1"
+
+[dev-dependencies]
+embedded-hal-mock = "0.7"

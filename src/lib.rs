@@ -16,7 +16,7 @@ limitations under the License.
 
 #![no_std]
 
-use embedded_hal::serial::{Read as SRead, Write as SWrite};
+use embedded_hal::serial::{Read, Write};
 use nb::Result;
 
 use core::fmt;
@@ -30,16 +30,16 @@ type Packet = [u8; PAYLOAD_SIZE];
 /// A wrapper for possible errors returned by sensor operations.
 pub enum Error<T>
 where
-    T: SRead<u8> + SWrite<u8>,
+    T: Read<u8> + Write<u8>,
 {
-    WriteError(<T as SWrite<u8>>::Error),
-    ReadError(<T as SRead<u8>>::Error),
+    WriteError(<T as Write<u8>>::Error),
+    ReadError(<T as Read<u8>>::Error),
     ResponseInvalid,
 }
 
 impl<T> fmt::Debug for Error<T>
 where
-    T: SRead<u8> + SWrite<u8>,
+    T: Read<u8> + Write<u8>,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -55,106 +55,79 @@ enum State {
     Reading(Packet, usize),
 }
 
-/// A structure holding state for active read operation.
-pub struct ReadOp<'a, T> {
-    dev: &'a mut T,
-    state: State,
-}
-
 /// Sensor readings.
 #[derive(PartialEq)]
-pub struct Reading {
+pub struct SensorReading {
     /// CO2 concentration in PPM.
-    pub co2_concentration: u16,
+    pub co2: u16,
     /// Temperature in Celsius plus 40. Some sensors in the family may not export this field.
     pub temp: u8,
-    pub s: u8,
-    pub u: u16,
-}
-
-impl<'a, T> ReadOp<'a, T>
-where
-    T: SRead<u8> + SWrite<u8>,
-{
-    pub fn wait(&mut self) -> Result<Reading, Error<T>> {
-        loop {
-            match self.state {
-                State::Writing(_, PAYLOAD_SIZE) => {
-                    self.dev.flush().map_err(|e| e.map(Error::WriteError))?;
-                    self.state = State::Reading(Default::default(), 0)
-                }
-                State::Writing(buf, ref mut len) => {
-                    self.dev
-                        .write(buf[*len])
-                        .map_err(|e| e.map(Error::WriteError))?;
-                    *len += 1;
-                }
-                State::Reading(ref buf, PAYLOAD_SIZE) => {
-                    let res = parse_response(buf);
-                    self.reset();
-                    return res.map_err(|_| Error::ResponseInvalid.into());
-                }
-                State::Reading(ref mut buf, ref mut len) => {
-                    buf[*len] = self.dev.read().map_err(|e| e.map(Error::ReadError))?;
-                    *len += 1;
-                }
-            }
-        }
-    }
-
-    fn reset(&mut self) {
-        self.state = State::Writing(CMD_READ_SENSOR, 0)
-    }
-}
-
-struct ResponseInvalid {}
-
-fn parse_response(buf: &Packet) -> core::result::Result<Reading, ResponseInvalid> {
-    let chksum = (!buf
-        .iter()
-        .skip(1)
-        .take(7)
-        .fold(0u8, |s, i| s.wrapping_add(*i)))
-    .wrapping_add(1);
-    if chksum != buf[8] {
-        return Err(ResponseInvalid {});
-    }
-
-    let co2_concentration = u16::from_be_bytes([buf[2], buf[3]]);
-    let temp = buf[4];
-    let s = buf[5];
-    let u = u16::from_be_bytes([buf[6], buf[7]]);
-
-    Ok(Reading {
-        co2_concentration,
-        temp,
-        s,
-        u,
-    })
 }
 
 /// Start reading CO2 concentration data from sensor.
-pub fn read_sensor<T>(dev: &mut T) -> ReadOp<T> {
-    ReadOp {
-        state: State::Writing(CMD_READ_SENSOR, 0),
-        dev,
+pub fn read<'a, T>(dev: &'a mut T) -> impl 'a + FnMut() -> Result<SensorReading, Error<T>>
+where
+    T: Write<u8> + Read<u8>,
+{
+    let mut state = State::Writing(CMD_READ_SENSOR, 0);
+    move || loop {
+        match state {
+            State::Writing(_, PAYLOAD_SIZE) => {
+                dev.flush().map_err(|e| e.map(Error::WriteError))?;
+                state = State::Reading(Default::default(), 0)
+            }
+            State::Writing(buf, ref mut len) => {
+                dev.write(buf[*len]).map_err(|e| e.map(Error::WriteError))?;
+                *len += 1;
+            }
+            State::Reading(ref buf, PAYLOAD_SIZE) => {
+                // checksum validation
+                let cs = (!buf
+                    .iter()
+                    .skip(1)
+                    .take(7)
+                    .fold(0u8, |s, i| s.wrapping_add(*i)))
+                .wrapping_add(1);
+                if cs != buf[8] {
+                    return Err(Error::ResponseInvalid.into());
+                }
+
+                return Ok(SensorReading {
+                    co2: u16::from_be_bytes([buf[2], buf[3]]),
+                    temp: buf[4],
+                });
+            }
+            State::Reading(ref mut buf, ref mut len) => {
+                buf[*len] = dev.read().map_err(|e| e.map(Error::ReadError))?;
+                *len += 1;
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use embedded_hal_mock::serial::{Mock, Transaction};
+    use nb::block;
 
     #[test]
-    fn test_parse() {
-        assert!(parse_response(&[0xFF, 0x01, 0x86, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01]).is_err());
+    fn test_read() {
+        let mut m = Mock::new(&[
+            Transaction::write_many(super::CMD_READ_SENSOR),
+            Transaction::flush(),
+            Transaction::read_many(&[0xFF, 0x86, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79]),
+        ]);
+
+        let res = {
+            let mut op = super::read(&mut m);
+            block!(op())
+        };
+        m.done();
         assert!(
-            parse_response(&[0xFF, 0x86, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79]).ok()
-                == Some(Reading {
-                    co2_concentration: 0x100u16,
+            res.ok()
+                == Some(super::SensorReading {
+                    co2: 0x100u16,
                     temp: 0,
-                    s: 0,
-                    u: 0
                 })
         );
     }

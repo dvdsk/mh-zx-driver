@@ -22,7 +22,7 @@ use linux_embedded_hal::{
 
 use env_logger;
 use log::info;
-use mh_zx_driver::read_sensor;
+use mh_zx_driver as mhz;
 use nb::block;
 use prometheus::{__register_gauge, opts, register_gauge};
 use prometheus_exporter::{FinishedUpdate, PrometheusExporter};
@@ -50,26 +50,18 @@ fn main() {
 
     info!("Initializing metrics");
     let co2_metric = register_gauge!("mhz1x_co2_concentration", "CO2 concentration").unwrap();
-    let t_metric = register_gauge!("mhz1x_temp", "Temperature").unwrap();
-    let s_metric = register_gauge!("mhz1x_s", "S value").unwrap();
-    let u_metric = register_gauge!("mhz1x_u", "U value").unwrap();
+    let temp_metric = register_gauge!("mhz1x_temp", "Temperature").unwrap();
 
     let mut update_metrics = || {
         info!("Reading data from sensor");
         let reading = {
-            let mut op = read_sensor(&mut dev);
-            block!(op.wait())
+            let mut op = mhz::read(&mut dev);
+            block!(op())
         }
         .expect("Error reading data from sensor");
-        info!(
-            "Read CO2={}ppm, T={}C",
-            reading.co2_concentration,
-            reading.temp - 40,
-        );
-        co2_metric.set(reading.co2_concentration.into());
-        t_metric.set(reading.temp.into());
-        s_metric.set(reading.s.into());
-        u_metric.set(reading.u.into());
+        info!("Read CO2={}ppm, T={}C", reading.co2, reading.temp - 40,);
+        co2_metric.set(reading.co2.into());
+        temp_metric.set(reading.temp.into());
     };
 
     update_metrics();
