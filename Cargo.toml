@@ -12,3 +12,32 @@ version = "0.1"
 
 [dev-dependencies]
 embedded-hal-mock = "0.7"
+
+# Dependencies for prometheus exporter example
+[dependencies.linux-embedded-hal]
+optional = true
+version = "0.3"
+
+[dependencies.prometheus]
+optional = true
+version = "0.7"
+
+[dependencies.prometheus_exporter]
+optional = true
+version = "0.4"
+
+[dependencies.log]
+optional = true
+version = "0.4"
+
+[dependencies.env_logger]
+optional = true
+version = "0.4"
+
+
+[features]
+examples = ["linux-embedded-hal", "prometheus", "prometheus_exporter", "env_logger", "log"]
+
+[[example]]
+name = "prometheus_exporter"
+required-features = ["examples"]
