@@ -87,8 +87,45 @@ pub mod commands {
     pub const READ_CO2: &Packet = &Packet([0xFF, 0x01, 0x86, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79]);
 }
 
+pub struct UartWrapper<R, W>(R, W);
+
+impl<R, W> Read<u8> for UartWrapper<R, W>
+where
+    R: Read<u8>,
+{
+    type Error = R::Error;
+    fn read(&mut self) -> Result<u8, R::Error> {
+        self.0.read()
+    }
+}
+
+impl<R, W> Write<u8> for UartWrapper<R, W>
+where
+    W: Write<u8>,
+{
+    type Error = W::Error;
+    fn write(&mut self, word: u8) -> Result<(), W::Error> {
+        self.1.write(word)
+    }
+    fn flush(&mut self) -> Result<(), W::Error> {
+        self.1.flush()
+    }
+}
+
 pub struct Sensor<U> {
     uart: U,
+}
+
+impl<R, W> Sensor<UartWrapper<R, W>>
+where
+    R: Read<u8>,
+    W: Write<u8>,
+{
+    pub fn from_rx_tx(read: R, write: W) -> Sensor<UartWrapper<R, W>> {
+        Sensor {
+            uart: UartWrapper(read, write),
+        }
+    }
 }
 
 impl<U> Sensor<U>
@@ -163,6 +200,33 @@ mod tests {
         block!(op()).unwrap();
 
         m.done();
+    }
+
+    #[test]
+    fn sensor_rx_tx() {
+        let mut rx = Mock::new(&[Transaction::read_many(&[
+            0xFF, 0x86, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79,
+        ])]);
+        let mut tx = Mock::new(&[
+            Transaction::write_many(commands::READ_CO2.deref()),
+            Transaction::flush(),
+        ]);
+
+        let mut s = Sensor::from_rx_tx(rx.clone(), tx.clone());
+
+        {
+            let mut op = s.write_packet(commands::READ_CO2);
+            block!(op()).unwrap()
+        }
+        let mut p = Default::default();
+        {
+            let mut op = s.read_packet(&mut p);
+            block!(op()).unwrap()
+        }
+
+        let _m: Measurement = p.try_into().unwrap();
+        rx.done();
+        tx.done();
     }
 
     #[test]
