@@ -27,6 +27,7 @@ use nb::block;
 use prometheus::{__register_gauge, opts, register_gauge};
 use prometheus_exporter::{FinishedUpdate, PrometheusExporter};
 
+use core::convert::TryInto;
 use std::path::Path;
 use std::time::Duration;
 
@@ -46,22 +47,39 @@ fn main() {
             flow_control: FlowControl::FlowNone,
         })
         .expect("Failed to configure serial port");
-    let mut dev = Serial(tty_port);
+    let dev = Serial(tty_port);
+
+    let mut sensor = mhz::Sensor::new(dev);
+
+    let mut read_co2 = || -> mhz::Measurement {
+        {
+            let mut write = sensor.write_packet(mhz::commands::READ_CO2);
+            block!(write()).expect("Error sending command to sensor");
+        }
+
+        let mut p = Default::default();
+        {
+            let mut read = sensor.read_packet(&mut p);
+            block!(read()).expect("Error reading response from sensor");
+        }
+
+        p.try_into().expect("Error parsing sensor response")
+    };
 
     info!("Initializing metrics");
     let co2_metric = register_gauge!("mhz1x_co2_concentration", "CO2 concentration").unwrap();
     let temp_metric = register_gauge!("mhz1x_temp", "Temperature").unwrap();
+    let calib_ticks_metric = register_gauge!("mhz1x_calibration_ticks", "Temperature").unwrap();
+    let calib_cycles_metric = register_gauge!("mhz1x_calibration_cycles", "Temperature").unwrap();
 
     let mut update_metrics = || {
         info!("Reading data from sensor");
-        let reading = {
-            let mut op = mhz::read(&mut dev);
-            block!(op())
-        }
-        .expect("Error reading data from sensor");
+        let reading = read_co2();
         info!("Read CO2={}ppm, T={}C", reading.co2, reading.temp - 40,);
         co2_metric.set(reading.co2.into());
         temp_metric.set(reading.temp.into());
+        calib_ticks_metric.set(reading.calibration_ticks.into());
+        calib_cycles_metric.set(reading.calibration_cycles.into());
     };
 
     update_metrics();
