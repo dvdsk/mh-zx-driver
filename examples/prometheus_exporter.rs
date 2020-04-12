@@ -24,7 +24,7 @@ use env_logger;
 use log::info;
 use mh_zx_driver as mhz;
 use nb::block;
-use prometheus::register_gauge;
+use prometheus::{__register_gauge, opts, register_gauge};
 use prometheus_exporter::{FinishedUpdate, PrometheusExporter};
 
 use std::convert::TryInto;
