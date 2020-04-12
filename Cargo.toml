@@ -4,6 +4,11 @@ version = "0.1.0"
 authors = ["Constantine Verutin <cverutin@gmail.com>"]
 edition = "2018"
 
+readme = "README.md"
+license = "Apache-2.0"
+categories = ["embedded", "no-std"]
+keywords = ["mh-z19", "embedded", "sensor"]
+
 [dependencies.embedded-hal]
 version = "0.2"
 
