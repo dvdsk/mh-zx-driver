@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Constantine Verutin <cverutin@gmail.com>"]
 edition = "2018"
 
+repository = "https://github.com/xaep/mh-zx-driver"
 readme = "README.md"
 license = "Apache-2.0"
 categories = ["embedded", "no-std"]
