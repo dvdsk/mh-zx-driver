@@ -27,7 +27,7 @@ use nb::block;
 use prometheus::{__register_gauge, opts, register_gauge};
 use prometheus_exporter::{FinishedUpdate, PrometheusExporter};
 
-use core::convert::TryInto;
+use std::convert::TryInto;
 use std::path::Path;
 use std::time::Duration;
 
@@ -53,13 +53,13 @@ fn main() {
 
     let mut read_co2 = || -> mhz::Measurement {
         {
-            let mut write = sensor.write_packet(mhz::commands::READ_CO2);
+            let mut write = sensor.write_packet_op(mhz::commands::READ_CO2);
             block!(write()).expect("Error sending command to sensor");
         }
 
         let mut p = Default::default();
         {
-            let mut read = sensor.read_packet(&mut p);
+            let mut read = sensor.read_packet_op(&mut p);
             block!(read()).expect("Error reading response from sensor");
         }
 

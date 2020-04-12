@@ -16,6 +16,46 @@ limitations under the License.
 
 #![no_std]
 
+//! # MH-Z* CO2 sensor driver
+//!
+//! MH-Z* family CO2 sensor driver built on top of `embedded-hal` primitives.
+//! This is a `no_std` crate suitable for use on bare-metal.
+//!
+//! ## Usage
+//! The [`Sensor`](struct.Sensor.html) struct exposes methods to
+//! send commands ([`write_packet_op`](struct.Sensor.html#method.write_packet_op))
+//! to the sensor and to read the response([`read_packet_op`](struct.Sensor.html#method.read_packet_op)).
+//!
+//! ## Example
+//! ```
+//! use mh_zx_driver::{commands, Sensor, Measurement};
+//! use nb::block;
+//! use core::convert::TryInto;
+//! # use embedded_hal_mock::serial::{Mock, Transaction};
+//! # use core::ops::Deref;
+//!
+//! # let mut uart = Mock::new(&[
+//! #   Transaction::write_many(commands::READ_CO2.deref()),
+//! #   Transaction::flush(),
+//! #   Transaction::read_many(&[
+//! #     0xFF, 0x86, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79,
+//! #   ]),
+//! # ]);
+//! let mut sensor = Sensor::new(uart);
+//! // Send command to the sensor.
+//! {
+//!   let mut op = sensor.write_packet_op(commands::READ_CO2);
+//!   block!(op()).unwrap();
+//! };
+//! // Read the response.
+//! let mut packet = Default::default();
+//! {
+//!   let mut op = sensor.read_packet_op(&mut packet);
+//!   block!(op()).unwrap();
+//! }
+//! let meas: Measurement = packet.try_into().unwrap();
+//! println!("CO2 concentration: {}", meas.co2);
+//! ```
 use embedded_hal::serial::{Read, Write};
 use nb::Result;
 
@@ -24,10 +64,12 @@ use core::ops::{Deref, DerefMut};
 
 const PAYLOAD_SIZE: usize = 9;
 
+/// A wrapper for payload (9 bytes) sent/received by sensor hardware with some utility methods.
 #[derive(Debug, Default)]
 pub struct Packet([u8; PAYLOAD_SIZE]);
 
 impl Packet {
+    //! Verifies packet checksum.
     fn checksum_valid(&self) -> bool {
         let cs = (!self
             .0
@@ -54,10 +96,16 @@ impl DerefMut for Packet {
     }
 }
 
+/// A struct representing measurement data returned by sensor as a response to
+/// the [`READ_CO2`](commands/constant.READ_CO2.html) command.
 pub struct Measurement {
+    /// CO2 concentration, PPM.
     pub co2: u16,
+    /// Temperature, degrees Celsius plus 40.
     pub temp: u8,
+    /// If ABC is turned on - counter in "ticks" within a calibration cycle.
     pub calibration_ticks: u8,
+    /// If ABC is turned on - the nuumber of performed calibration cycles.
     pub calibration_cycles: u8,
 }
 
@@ -84,6 +132,7 @@ impl TryFrom<Packet> for Measurement {
 pub mod commands {
     use super::Packet;
 
+    /// Read "final" CO2 concentration.
     pub const READ_CO2: &Packet = &Packet([0xFF, 0x01, 0x86, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79]);
 }
 
@@ -112,6 +161,7 @@ where
     }
 }
 
+/// A struct representing sensor interface.
 pub struct Sensor<U> {
     uart: U,
 }
@@ -121,6 +171,7 @@ where
     R: Read<u8>,
     W: Write<u8>,
 {
+    //! Constructs the [`Sensor`](struct.Sensor.html) interface from 2 'halves' of UART.
     pub fn from_rx_tx(read: R, write: W) -> Sensor<UartWrapper<R, W>> {
         Sensor {
             uart: UartWrapper(read, write),
@@ -136,7 +187,17 @@ where
         Sensor { uart }
     }
 
-    pub fn write_packet<'a>(
+    /// Write a packet to the device.
+    ///
+    /// Returns a closure that sends a packet to the sensor.
+    /// The result of this function can be used with the
+    /// [`block!()`](../nb/macro.block.html) macro from
+    /// [`nb`](../nb/index.html) crate, e.g.:
+    /// ```ignore
+    /// let mut op = sensor.write_packet_op(commands::READ_CO2)
+    /// block!(op()).unwrap()
+    /// ```
+    pub fn write_packet_op<'a>(
         &'a mut self,
         packet: &'a Packet,
     ) -> impl FnMut() -> Result<(), <U as Write<u8>>::Error> + 'a {
@@ -150,7 +211,18 @@ where
         }
     }
 
-    pub fn read_packet<'a>(
+    /// Read a packet from the device.
+    ///
+    /// Returns a closure that reads a response packet from the sensor.
+    /// The result of this function can be used with the
+    /// [`block!()`](../nb/macro.block.html) macro from
+    /// [`nb`](../nb/index.html) crate, e.g.:
+    /// ```ignore
+    /// let mut packet = Default::default()
+    /// let mut op = sensor.read_packet_op(&mut packet)
+    /// block!(op()).unwrap()
+    /// ```
+    pub fn read_packet_op<'a>(
         &'a mut self,
         packet: &'a mut Packet,
     ) -> impl FnMut() -> Result<(), <U as Read<u8>>::Error> + 'a {
@@ -181,7 +253,7 @@ mod tests {
         ]);
 
         let mut s = super::Sensor::new(m.clone());
-        let mut op = s.write_packet(commands::READ_CO2);
+        let mut op = s.write_packet_op(commands::READ_CO2);
         block!(op()).unwrap();
 
         m.done();
@@ -196,7 +268,7 @@ mod tests {
         let mut s = Sensor::new(m.clone());
         let mut p = Default::default();
 
-        let mut op = s.read_packet(&mut p);
+        let mut op = s.read_packet_op(&mut p);
         block!(op()).unwrap();
 
         m.done();
@@ -215,12 +287,12 @@ mod tests {
         let mut s = Sensor::from_rx_tx(rx.clone(), tx.clone());
 
         {
-            let mut op = s.write_packet(commands::READ_CO2);
+            let mut op = s.write_packet_op(commands::READ_CO2);
             block!(op()).unwrap()
         }
         let mut p = Default::default();
         {
-            let mut op = s.read_packet(&mut p);
+            let mut op = s.read_packet_op(&mut p);
             block!(op()).unwrap()
         }
 
