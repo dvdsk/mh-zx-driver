@@ -38,7 +38,7 @@ version = "0.4"
 
 [dependencies.env_logger]
 optional = true
-version = "0.4"
+version = "0.7"
 
 
 [features]

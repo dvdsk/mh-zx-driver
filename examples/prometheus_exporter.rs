@@ -32,7 +32,7 @@ use std::path::Path;
 use std::time::Duration;
 
 fn main() {
-    env_logger::init().unwrap();
+    env_logger::init();
 
     info!("Initializing UART interface");
     let mut tty_port =
