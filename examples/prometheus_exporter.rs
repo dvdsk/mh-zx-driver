@@ -67,10 +67,10 @@ fn main() {
     };
 
     info!("Initializing metrics");
-    let co2_metric = register_gauge!("mhz1x_co2_concentration", "CO2 concentration").unwrap();
-    let temp_metric = register_gauge!("mhz1x_temp", "Temperature").unwrap();
-    let calib_ticks_metric = register_gauge!("mhz1x_calibration_ticks", "Temperature").unwrap();
-    let calib_cycles_metric = register_gauge!("mhz1x_calibration_cycles", "Temperature").unwrap();
+    let co2_metric = register_gauge!("mh_zx_co2_concentration", "CO2 concentration").unwrap();
+    let temp_metric = register_gauge!("mh_zx_temp", "Temperature").unwrap();
+    let calib_ticks_metric = register_gauge!("mh_zx_calibration_ticks", "Temperature").unwrap();
+    let calib_cycles_metric = register_gauge!("mh_zx_calibration_cycles", "Temperature").unwrap();
 
     let mut update_metrics = || {
         info!("Reading data from sensor");
