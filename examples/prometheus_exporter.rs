@@ -78,8 +78,8 @@ fn main() {
         info!("Read CO2={}ppm, T={}C", reading.co2, reading.temp - 40,);
         co2_metric.set(reading.co2.into());
         temp_metric.set(reading.temp.into());
-        calib_ticks_metric.set(reading.calibration_ticks.into());
-        calib_cycles_metric.set(reading.calibration_cycles.into());
+        calib_ticks_metric.set(reading.calib_ticks.into());
+        calib_cycles_metric.set(reading.calib_cycles.into());
     };
 
     update_metrics();

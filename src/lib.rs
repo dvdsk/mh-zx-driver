@@ -32,10 +32,9 @@ limitations under the License.
 //! use nb::block;
 //! use core::convert::TryInto;
 //! # use embedded_hal_mock::serial::{Mock, Transaction};
-//! # use core::ops::Deref;
 //!
 //! # let mut uart = Mock::new(&[
-//! #   Transaction::write_many(commands::READ_CO2.deref()),
+//! #   Transaction::write_many(commands::READ_CO2.as_slice()),
 //! #   Transaction::flush(),
 //! #   Transaction::read_many(&[
 //! #     0xFF, 0x86, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79,
@@ -60,7 +59,6 @@ use embedded_hal::serial::{Read, Write};
 use nb::Result;
 
 use core::convert::TryFrom;
-use core::ops::{Deref, DerefMut};
 
 const PAYLOAD_SIZE: usize = 9;
 
@@ -80,19 +78,10 @@ impl Packet {
         .wrapping_add(1);
         cs == self.0[8]
     }
-}
 
-impl Deref for Packet {
-    type Target = [u8; PAYLOAD_SIZE];
-
-    fn deref(&self) -> &Self::Target {
+    /// Returns underlying byte payload as slice.
+    pub fn as_slice(&self) -> &[u8] {
         &self.0
-    }
-}
-
-impl DerefMut for Packet {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
     }
 }
 
@@ -104,9 +93,9 @@ pub struct Measurement {
     /// Temperature, degrees Celsius plus 40.
     pub temp: u8,
     /// If ABC is turned on - counter in "ticks" within a calibration cycle.
-    pub calibration_ticks: u8,
+    pub calib_ticks: u8,
     /// If ABC is turned on - the nuumber of performed calibration cycles.
-    pub calibration_cycles: u8,
+    pub calib_cycles: u8,
 }
 
 #[derive(Debug)]
@@ -116,15 +105,16 @@ impl TryFrom<Packet> for Measurement {
     type Error = InvalidResponse;
 
     fn try_from(p: Packet) -> core::result::Result<Self, Self::Error> {
-        if p[0] != 0xFF || p[1] != 0x86 || !p.checksum_valid() {
+        if p.0[0] != 0xFF || p.0[1] != 0x86 || !p.checksum_valid() {
             return Err(InvalidResponse(p));
         }
 
+        let Packet([_, _, ch, cl, temp, calib_ticks, calib_cycles, _, _]) = p;
         Ok(Measurement {
-            co2: u16::from_be_bytes([p[2], p[3]]),
-            temp: p[4],
-            calibration_ticks: p[6],
-            calibration_cycles: p[7],
+            co2: u16::from_be_bytes([ch, cl]),
+            temp,
+            calib_ticks,
+            calib_cycles,
         })
     }
 }
@@ -204,7 +194,7 @@ where
         let mut i = 0usize;
         move || {
             while i < PAYLOAD_SIZE {
-                self.uart.write(packet[i])?;
+                self.uart.write(packet.0[i])?;
                 i += 1;
             }
             self.uart.flush()
@@ -229,7 +219,7 @@ where
         let mut i = 0usize;
         move || {
             while i < PAYLOAD_SIZE {
-                packet[i] = self.uart.read()?;
+                packet.0[i] = self.uart.read()?;
                 i += 1;
             }
             Ok(())
@@ -248,7 +238,7 @@ mod tests {
     #[test]
     fn sensor_write() {
         let mut m = Mock::new(&[
-            Transaction::write_many(commands::READ_CO2.deref()),
+            Transaction::write_many(commands::READ_CO2.0),
             Transaction::flush(),
         ]);
 
@@ -280,7 +270,7 @@ mod tests {
             0xFF, 0x86, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79,
         ])]);
         let mut tx = Mock::new(&[
-            Transaction::write_many(commands::READ_CO2.deref()),
+            Transaction::write_many(commands::READ_CO2.0),
             Transaction::flush(),
         ]);
 
@@ -333,10 +323,10 @@ mod tests {
         assert!(p.checksum_valid());
 
         for i in 1..PAYLOAD_SIZE - 1 {
-            let b = p[i];
-            p[i] = b.wrapping_add(1);
+            let b = p.0[i];
+            p.0[i] = b.wrapping_add(1);
             assert!(!p.checksum_valid());
-            p[i] = b;
+            p.0[i] = b;
         }
     }
 }
