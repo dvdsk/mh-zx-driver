@@ -3,6 +3,7 @@ name = "mh-zx-driver"
 version = "0.1.0"
 authors = ["Constantine Verutin <cverutin@gmail.com>"]
 edition = "2018"
+description = "MH-Z* family (MH-Z14/Z19/Z19B) CO2 sensor driver built on top of `embedded-hal` primitives."
 
 repository = "https://github.com/xaep/mh-zx-driver"
 readme = "README.md"
@@ -39,7 +40,6 @@ version = "0.4"
 [dependencies.env_logger]
 optional = true
 version = "0.7"
-
 
 [features]
 examples = ["linux-embedded-hal", "prometheus", "prometheus_exporter", "env_logger", "log"]
