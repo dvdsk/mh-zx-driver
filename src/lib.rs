@@ -183,9 +183,18 @@ where
     /// The result of this function can be used with the
     /// [`block!()`](../nb/macro.block.html) macro from
     /// [`nb`](../nb/index.html) crate, e.g.:
-    /// ```ignore
-    /// let mut op = sensor.write_packet_op(commands::READ_CO2)
-    /// block!(op()).unwrap()
+    /// ```
+    /// # use embedded_hal_mock::serial::{Mock, Transaction};
+    /// # use mh_zx_driver::{commands, Sensor};
+    /// # use nb::block;
+    ///
+    /// # let mut uart = Mock::new(&[
+    /// #   Transaction::write_many(commands::READ_CO2.as_slice()),
+    /// #   Transaction::flush(),
+    /// # ]);
+    /// # let mut sensor = Sensor::new(uart);
+    /// let mut op = sensor.write_packet_op(commands::READ_CO2);
+    /// block!(op()).unwrap();
     /// ```
     pub fn write_packet_op<'a>(
         &'a mut self,
@@ -207,10 +216,20 @@ where
     /// The result of this function can be used with the
     /// [`block!()`](../nb/macro.block.html) macro from
     /// [`nb`](../nb/index.html) crate, e.g.:
-    /// ```ignore
-    /// let mut packet = Default::default()
-    /// let mut op = sensor.read_packet_op(&mut packet)
-    /// block!(op()).unwrap()
+    /// ```
+    /// # use embedded_hal_mock::serial::{Mock, Transaction};
+    /// # use mh_zx_driver::{commands, Sensor, Packet};
+    /// # use nb::block;
+    ///
+    /// # let mut uart = Mock::new(&[
+    /// #   Transaction::read_many(&[
+    /// #     0xFF, 0x86, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79,
+    /// #   ]),
+    /// # ]);
+    /// # let mut sensor = Sensor::new(uart);
+    /// let mut packet = Default::default();
+    /// let mut op = sensor.read_packet_op(&mut packet);
+    /// block!(op()).unwrap();
     /// ```
     pub fn read_packet_op<'a>(
         &'a mut self,
@@ -234,35 +253,6 @@ mod tests {
 
     use super::*;
     use core::convert::TryInto;
-
-    #[test]
-    fn sensor_write() {
-        let mut m = Mock::new(&[
-            Transaction::write_many(commands::READ_CO2.0),
-            Transaction::flush(),
-        ]);
-
-        let mut s = super::Sensor::new(m.clone());
-        let mut op = s.write_packet_op(commands::READ_CO2);
-        block!(op()).unwrap();
-
-        m.done();
-    }
-
-    #[test]
-    fn sensor_read() {
-        let mut m = Mock::new(&[Transaction::read_many(&[
-            0xFF, 0x86, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79,
-        ])]);
-
-        let mut s = Sensor::new(m.clone());
-        let mut p = Default::default();
-
-        let mut op = s.read_packet_op(&mut p);
-        block!(op()).unwrap();
-
-        m.done();
-    }
 
     #[test]
     fn sensor_rx_tx() {
