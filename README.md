@@ -1,5 +1,7 @@
 # mh-zx-driver
-MH-Z* family CO2 sensor driver built on top of `embedded-hal` primitives. This is a `no_std` crate suitable for use on bare-metal.
+MH-Z* family CO2 sensor driver built on top of `embedded-hal` primitives. This
+is a `no_std` crate suitable for use on bare-metal. The API is non-blocking (in
+a way compatible with the `nb` crate).
 
 ## Supported devices
 
