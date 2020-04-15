@@ -67,16 +67,20 @@ const PAYLOAD_SIZE: usize = 9;
 pub struct Packet([u8; PAYLOAD_SIZE]);
 
 impl Packet {
-    //! Verifies packet checksum.
-    fn checksum_valid(&self) -> bool {
-        let cs = (!self
+    /// Returns packet checksum.
+    fn checksum(&self) -> u8 {
+        (!self
             .0
             .iter()
             .skip(1)
             .take(7)
             .fold(0u8, |s, i| s.wrapping_add(*i)))
-        .wrapping_add(1);
-        cs == self.0[8]
+        .wrapping_add(1)
+    }
+
+    /// Verifies packet checksum.
+    fn checksum_valid(&self) -> bool {
+        self.checksum() == self.0[8]
     }
 
     /// Returns underlying byte payload as slice.
@@ -96,6 +100,17 @@ pub struct Measurement {
     pub calib_ticks: u8,
     /// If ABC is turned on - the nuumber of performed calibration cycles.
     pub calib_cycles: u8,
+}
+
+/// A struct representing raw CO2 data returned by sensor as a response to
+/// the [`READ_RAW_CO2`](commands/constant.READ_RAW_CO2.html) command.
+pub struct RawMeasurement {
+    // Smoothed temperature ADC value.
+    pub adc_temp: u16,
+    // CO2 level before clamping
+    pub co2: u16,
+    // Minimum light ADC value.
+    pub adc_min_light: u16,
 }
 
 #[derive(Debug)]
@@ -119,11 +134,31 @@ impl TryFrom<Packet> for Measurement {
     }
 }
 
+impl TryFrom<Packet> for RawMeasurement {
+    type Error = InvalidResponse;
+
+    fn try_from(p: Packet) -> core::result::Result<Self, Self::Error> {
+        if p.0[0] != 0xFF || p.0[1] != 0x85 || !p.checksum_valid() {
+            return Err(InvalidResponse(p));
+        }
+
+        let Packet([_, _, th, tl, ch, cl, lh, ll, _]) = p;
+        Ok(RawMeasurement {
+            adc_temp: u16::from_be_bytes([th, tl]),
+            co2: u16::from_be_bytes([ch, cl]),
+            adc_min_light: u16::from_be_bytes([lh, ll]),
+        })
+    }
+}
+
 pub mod commands {
     use super::Packet;
 
     /// Read "final" CO2 concentration.
     pub const READ_CO2: &Packet = &Packet([0xFF, 0x01, 0x86, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79]);
+    /// Read raw CO2 concentration.
+    pub const READ_RAW_CO2: &Packet =
+        &Packet([0xFF, 0x01, 0x85, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7a]);
 }
 
 pub struct UartWrapper<R, W>(R, W);
@@ -318,5 +353,8 @@ mod tests {
             assert!(!p.checksum_valid());
             p.0[i] = b;
         }
+
+        assert!(commands::READ_CO2.checksum_valid());
+        assert!(commands::READ_RAW_CO2.checksum_valid());
     }
 }
