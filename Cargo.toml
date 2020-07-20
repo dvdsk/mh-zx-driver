@@ -1,6 +1,6 @@
 [package]
 name = "mh-zx-driver"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Constantine Verutin <cverutin@gmail.com>"]
 edition = "2018"
 description = "MH-Z* family (MH-Z14/Z19/Z19B) CO2 sensor driver built on top of `embedded-hal` primitives."
