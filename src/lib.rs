@@ -55,10 +55,20 @@ limitations under the License.
 //! let meas: Measurement = packet.try_into().unwrap();
 //! println!("CO2 concentration: {}", meas.co2);
 //! ```
+//!
+//! ## [`Future`](../futures/future/trait.Future.html) support
+//! The experimental support for `async`/`await` can be activated by enabling the `async` feature in `Cargo.toml`.
+//! It adds async methods to the [`Sensor`](struct.Sensor.html) struct.
+
 use embedded_hal::serial::{Read, Write};
 use nb::Result;
 
 use core::convert::TryFrom;
+
+#[cfg(feature = "async")]
+pub mod futures_compat;
+#[cfg(feature = "async")]
+use futures_compat::nb_fn;
 
 const PAYLOAD_SIZE: usize = 9;
 
@@ -227,9 +237,10 @@ where
     /// #   Transaction::write_many(commands::READ_CO2.as_slice()),
     /// #   Transaction::flush(),
     /// # ]);
-    /// # let mut sensor = Sensor::new(uart);
+    /// # let mut sensor = Sensor::new(uart.clone());
     /// let mut op = sensor.write_packet_op(commands::READ_CO2);
     /// block!(op()).unwrap();
+    /// # uart.done()
     /// ```
     pub fn write_packet_op<'a>(
         &'a mut self,
@@ -243,6 +254,34 @@ where
             }
             self.uart.flush()
         }
+    }
+
+    #[cfg(feature = "async")]
+    /// Asynchronously write a packet to the device.
+    ///
+    /// Returns a [`Future`](../futures/future/trait.Future.html) that can be
+    /// used in `async` code, e.g.:
+    /// ```
+    /// # use embedded_hal_mock::serial::{Mock, Transaction};
+    /// # use mh_zx_driver::{commands, Sensor, Packet};
+    /// use futures::executor::block_on;
+    ///
+    /// # let mut uart = Mock::new(&[
+    /// #   Transaction::write_many(commands::READ_CO2.as_slice()),
+    /// #   Transaction::flush(),
+    /// # ]);
+    /// # let mut sensor = Sensor::new(uart.clone());
+    /// block_on(async {
+    ///     sensor.write_packet(commands::READ_CO2).await.unwrap()
+    /// });
+    /// # uart.done()
+    /// ```
+    pub async fn write_packet<'a>(
+        &'a mut self,
+        packet: &'a Packet,
+    ) -> core::result::Result<(), <U as Write<u8>>::Error>
+    {
+        nb_fn(self.write_packet_op(packet)).await
     }
 
     /// Read a packet from the device.
@@ -261,10 +300,11 @@ where
     /// #     0xFF, 0x86, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79,
     /// #   ]),
     /// # ]);
-    /// # let mut sensor = Sensor::new(uart);
+    /// # let mut sensor = Sensor::new(uart.clone());
     /// let mut packet = Default::default();
     /// let mut op = sensor.read_packet_op(&mut packet);
     /// block!(op()).unwrap();
+    /// # uart.done()
     /// ```
     pub fn read_packet_op<'a>(
         &'a mut self,
@@ -279,6 +319,36 @@ where
             Ok(())
         }
     }
+
+    #[cfg(feature = "async")]
+    /// Asynchronously read a packet from the device.
+    ///
+    /// Returns a [`Future`](../futures/future/trait.Future.html) that can be
+    /// used in `async` code, e.g.:
+    /// ```
+    /// # use embedded_hal_mock::serial::{Mock, Transaction};
+    /// # use mh_zx_driver::{commands, Sensor, Packet};
+    /// use futures::executor::block_on;
+    ///
+    /// # let mut uart = Mock::new(&[
+    /// #   Transaction::read_many(&[
+    /// #     0xFF, 0x86, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79,
+    /// #   ]),
+    /// # ]);
+    /// # let mut sensor = Sensor::new(uart.clone());
+    /// let mut packet = Default::default();
+    /// block_on(async {
+    ///     sensor.read_packet(&mut packet).await.unwrap()
+    /// });
+    /// # uart.done()
+    /// ```
+    pub async fn read_packet<'a>(
+        &'a mut self,
+        packet: &'a mut Packet,
+    ) -> core::result::Result<(), <U as Read<u8>>::Error>
+    {
+        nb_fn(self.read_packet_op(packet)).await
+    }
 }
 
 #[cfg(test)]
@@ -289,12 +359,22 @@ mod tests {
     use super::*;
     use core::convert::TryInto;
 
+    #[cfg(feature = "async")]
+    use futures::executor::block_on;
+
     #[test]
     fn sensor_rx_tx() {
-        let mut rx = Mock::new(&[Transaction::read_many(&[
-            0xFF, 0x86, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79,
-        ])]);
+        let mut rx = Mock::new(&[
+            Transaction::read_error(nb::Error::WouldBlock),
+            Transaction::read(0xFF),
+            Transaction::read_error(nb::Error::WouldBlock),
+            Transaction::read_error(nb::Error::WouldBlock),
+            Transaction::read_many(&[0x86, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79]),
+        ]);
         let mut tx = Mock::new(&[
+            Transaction::write_error(0xFF, nb::Error::WouldBlock),
+            Transaction::write_error(0xFF, nb::Error::WouldBlock),
+            Transaction::write_error(0xFF, nb::Error::WouldBlock),
             Transaction::write_many(commands::READ_CO2.0),
             Transaction::flush(),
         ]);
@@ -310,6 +390,40 @@ mod tests {
             let mut op = s.read_packet_op(&mut p);
             block!(op()).unwrap()
         }
+
+        let _m: Measurement = p.try_into().unwrap();
+        rx.done();
+        tx.done();
+    }
+
+    #[cfg(feature = "async")]
+    #[test]
+    fn async_rx_tx() {
+        let mut rx = Mock::new(&[
+            Transaction::read_error(nb::Error::WouldBlock),
+            Transaction::read(0xFF),
+            Transaction::read_error(nb::Error::WouldBlock),
+            Transaction::read_error(nb::Error::WouldBlock),
+            Transaction::read_many(&[0x86, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79]),
+        ]);
+        let mut tx = Mock::new(&[
+            Transaction::write_error(0xFF, nb::Error::WouldBlock),
+            Transaction::write_error(0xFF, nb::Error::WouldBlock),
+            Transaction::write_error(0xFF, nb::Error::WouldBlock),
+            Transaction::write_many(commands::READ_CO2.0),
+            Transaction::flush(),
+        ]);
+
+        let mut s = Sensor::from_rx_tx(rx.clone(), tx.clone());
+
+        let f = async {
+            s.write_packet(commands::READ_CO2).await.unwrap();
+            let mut p = Default::default();
+            s.read_packet(&mut p).await.unwrap();
+            p
+        };
+
+        let p = block_on(f);
 
         let _m: Measurement = p.try_into().unwrap();
         rx.done();
