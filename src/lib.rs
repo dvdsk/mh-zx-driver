@@ -118,12 +118,12 @@ pub mod commands {
 }
 
 /// A struct representing sensor interface.
-pub struct Sensor<Tx, Rx> {
+pub struct MHZ<Tx, Rx> {
     uart_tx: Tx,
     uart_rx: Rx,
 }
 
-impl<Tx, Rx> Sensor<Tx, Rx>
+impl<Tx, Rx> MHZ<Tx, Rx>
 where
     Tx: Write,
     Tx::Error: defmt::Format,
@@ -131,8 +131,8 @@ where
     Rx::Error: defmt::Format,
 {
     //! Constructs the [`Sensor`](struct.Sensor.html) interface from 2 'halves' of UART.
-    pub fn from_tx_rx(uart_tx: Tx, uart_rx: Rx) -> Sensor<Tx, Rx> {
-        Sensor { uart_tx, uart_rx }
+    pub fn from_tx_rx(uart_tx: Tx, uart_rx: Rx) -> MHZ<Tx, Rx> {
+        MHZ { uart_tx, uart_rx }
     }
 
     pub async fn read(&mut self) -> Result<Measurement, Error<Tx::Error, Rx::Error>> {
