@@ -135,7 +135,7 @@ where
         MHZ { uart_tx, uart_rx }
     }
 
-    pub async fn read(&mut self) -> Result<Measurement, Error<Tx::Error, Rx::Error>> {
+    pub async fn read_co2(&mut self) -> Result<Measurement, Error<Tx::Error, Rx::Error>> {
         self.uart_tx
             .write_all(&commands::READ_CO2)
             .await
@@ -153,7 +153,7 @@ where
         Measurement::parse_response(buf)
     }
 
-    pub async fn read_raw(&mut self) -> Result<RawMeasurement, Error<Tx::Error, Rx::Error>> {
+    pub async fn read_co2_raw(&mut self) -> Result<RawMeasurement, Error<Tx::Error, Rx::Error>> {
         self.uart_tx
             .write_all(&commands::READ_RAW_CO2)
             .await
