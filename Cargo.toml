@@ -1,5 +1,5 @@
 [package]
-name = "mh-zx-driver"
+name = "mhz"
 version = "0.3.0"
 authors = ["David Kleingeld", "Constantine Verutin <cverutin@gmail.com>"]
 edition = "2018"
