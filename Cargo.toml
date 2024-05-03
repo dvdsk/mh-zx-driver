@@ -2,7 +2,7 @@
 name = "mhz"
 version = "0.3.0"
 authors = ["David Kleingeld", "Constantine Verutin <cverutin@gmail.com>"]
-edition = "2018"
+edition = "2021"
 description = "MH-Z* family (MH-Z14/Z19/Z19B) CO2 sensor driver built on top of `embedded-hal` primitives."
 
 repository = "https://github.com/dvdsk/mh-zx-driver"
