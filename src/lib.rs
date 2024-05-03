@@ -36,6 +36,23 @@ where
     Reading(RxError),
 }
 
+impl<TxError, RxError> Clone for Error<TxError, RxError>
+where
+    TxError: defmt::Format + fmt::Debug + Clone,
+    RxError: defmt::Format + fmt::Debug + Clone,
+{
+    fn clone(&self) -> Self {
+        match self {
+            Error::InvalidChecksum => Error::InvalidChecksum,
+            Error::InvalidPacket => Error::InvalidPacket,
+            Error::WritingToUart(e) => Error::WritingToUart(e.clone()),
+            Error::FlushingUart(e) => Error::FlushingUart(e.clone()),
+            Error::ReadingEOF => Error::ReadingEOF,
+            Error::Reading(e) => Error::Reading(e.clone()),
+        }
+    }
+}
+
 const PAYLOAD_SIZE: usize = 9;
 fn checksum(bytes: &[u8; PAYLOAD_SIZE]) -> u8 {
     (!bytes
