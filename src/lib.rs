@@ -53,6 +53,24 @@ where
     }
 }
 
+/// very ugly, still needed unfortunately
+/// const cmp tracking issue: https://github.com/rust-lang/rust/issues/92391
+/// workaround credits: https://stackoverflow.com/questions/53619695/
+/// calculating-maximum-value-of-a-set-of-constant-expressions-at-compile-time
+#[cfg(feature = "postcard")]
+const fn max(a: usize, b: usize) -> usize {
+    [a, b][(a < b) as usize]
+}
+
+#[cfg(feature = "postcard")]
+impl<TxError, RxError> postcard::experimental::max_size::MaxSize for Error<TxError, RxError>
+where
+    TxError: postcard::experimental::max_size::MaxSize + core::fmt::Debug + defmt::Format,
+    RxError: postcard::experimental::max_size::MaxSize + core::fmt::Debug + defmt::Format,
+{
+    const POSTCARD_MAX_SIZE: usize = 1 + max(TxError::POSTCARD_MAX_SIZE, RxError::POSTCARD_MAX_SIZE);
+}
+
 const PAYLOAD_SIZE: usize = 9;
 fn checksum(bytes: &[u8; PAYLOAD_SIZE]) -> u8 {
     (!bytes
