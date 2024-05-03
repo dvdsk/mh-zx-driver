@@ -2,6 +2,9 @@
 MH-Z* family CO2 sensor driver built on top of `embedded-io-async` primitives. This
 is a `no_std` crate suitable for use on bare-metal.
 
+A fork of `https://github.com/xaep/mh-zx-driver` adapting the project to work
+with embedded-io-async.
+
 ## Example
 ```rust
 // assume you have some embedded hal implementation giving you
