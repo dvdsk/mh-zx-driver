@@ -2,7 +2,7 @@
 #![doc = include_str!("../README.md")]
 
 use core::fmt;
-use embedded_io_async::{Read, Write};
+use embedded_io_async::{Read, ReadExactError, Write};
 
 #[derive(Debug)]
 #[cfg_attr(feature = "thiserror", derive(thiserror::Error))]
@@ -23,12 +23,17 @@ where
         error("Response header is not correct for the made request")
     )]
     InvalidPacket,
-    #[cfg_attr(feature = "thiserror", error("Writing data to UART failed: {0}"))]
+    #[cfg_attr(feature = "thiserror", error("Writing data to sensor failed: {0}"))]
     WritingToUart(TxError),
-    #[cfg_attr(feature = "thiserror", error("Flushing UART failed: {0}"))]
+    #[cfg_attr(feature = "thiserror", error("Flushing data to sensor failed: {0}"))]
     FlushingUart(TxError),
-    #[cfg_attr(feature = "thiserror", error("Could not read from UART: {0}"))]
-    ReadingFromUart(embedded_io_async::ReadExactError<RxError>),
+    #[cfg_attr(
+        feature = "thiserror",
+        error("Unexpected EOF while reading from sensor")
+    )]
+    ReadingEOF,
+    #[cfg_attr(feature = "thiserror", error("Could not read from sensor: {0}"))]
+    Reading(RxError),
 }
 
 const PAYLOAD_SIZE: usize = 9;
@@ -135,6 +140,13 @@ where
         MHZ { uart_tx, uart_rx }
     }
 
+    async fn read_into(&mut self, buf: &mut [u8]) -> Result<(), Error<Tx::Error, Rx::Error>> {
+        self.uart_rx.read_exact(buf).await.map_err(|e| match e {
+            ReadExactError::UnexpectedEof => Error::ReadingEOF,
+            ReadExactError::Other(e) => Error::Reading(e),
+        })
+    }
+
     pub async fn read_co2(&mut self) -> Result<Measurement, Error<Tx::Error, Rx::Error>> {
         self.uart_tx
             .write_all(&commands::READ_CO2)
@@ -146,7 +158,10 @@ where
         self.uart_rx
             .read_exact(&mut buf)
             .await
-            .map_err(Error::ReadingFromUart)?;
+            .map_err(|e| match e {
+                ReadExactError::UnexpectedEof => Error::ReadingEOF,
+                ReadExactError::Other(e) => Error::Reading(e),
+            })?;
         if !checksum_valid(&buf) {
             return Err(Error::InvalidChecksum);
         }
@@ -161,10 +176,7 @@ where
         self.uart_tx.flush().await.map_err(Error::FlushingUart)?;
 
         let mut buf = [0u8; PAYLOAD_SIZE];
-        self.uart_rx
-            .read_exact(&mut buf)
-            .await
-            .map_err(Error::ReadingFromUart)?;
+        self.read_into(&mut buf).await?;
         if !checksum_valid(&buf) {
             return Err(Error::InvalidChecksum);
         }
@@ -179,22 +191,22 @@ mod tests {
     #[test]
     fn parse_measurement() {
         let p = [0xFF, 0x86, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79];
-        Measurement::parse_response::<(),()>(p).unwrap();
+        Measurement::parse_response::<(), ()>(p).unwrap();
 
         // checksum mismatch
         let p = [0xFF, 0x86, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x78];
         assert!(!checksum_valid(&p));
-        Measurement::parse_response::<(),()>(p).unwrap_err();
+        Measurement::parse_response::<(), ()>(p).unwrap_err();
 
         // invalid command field
         let p = [0xFF, 0x87, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x78];
         assert!(checksum_valid(&p));
-        Measurement::parse_response::<(),()>(p).unwrap_err();
+        Measurement::parse_response::<(), ()>(p).unwrap_err();
 
         // byte0 is not 0xFF
         let p = [0xFE, 0x86, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79];
         assert!(checksum_valid(&p));
-        Measurement::parse_response::<(),()>(p).unwrap_err();
+        Measurement::parse_response::<(), ()>(p).unwrap_err();
     }
 
     #[test]
