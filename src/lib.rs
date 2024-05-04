@@ -53,6 +53,31 @@ where
     }
 }
 
+impl<TxError, RxError> Eq for Error<TxError, RxError>
+where
+    TxError: defmt::Format + fmt::Debug + Eq,
+    RxError: defmt::Format + fmt::Debug + Eq,
+{
+}
+
+impl<TxError, RxError> PartialEq for Error<TxError, RxError>
+where
+    TxError: defmt::Format + fmt::Debug + PartialEq,
+    RxError: defmt::Format + fmt::Debug + PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Error::InvalidChecksum, Error::InvalidChecksum) => true,
+            (Error::InvalidPacket, Error::InvalidPacket) => true,
+            (Error::WritingToUart(e), Error::WritingToUart(e2)) => e == e2,
+            (Error::FlushingUart(e), Error::FlushingUart(e2)) => e == e2,
+            (Error::ReadingEOF, Error::ReadingEOF) => true,
+            (Error::Reading(e), Error::Reading(e2)) => e == e2,
+            (_, _) => false,
+        }
+    }
+}
+
 /// very ugly, still needed unfortunately
 /// const cmp tracking issue: https://github.com/rust-lang/rust/issues/92391
 /// workaround credits: https://stackoverflow.com/questions/53619695/
@@ -68,7 +93,8 @@ where
     TxError: postcard::experimental::max_size::MaxSize + core::fmt::Debug + defmt::Format,
     RxError: postcard::experimental::max_size::MaxSize + core::fmt::Debug + defmt::Format,
 {
-    const POSTCARD_MAX_SIZE: usize = 1 + max(TxError::POSTCARD_MAX_SIZE, RxError::POSTCARD_MAX_SIZE);
+    const POSTCARD_MAX_SIZE: usize =
+        1 + max(TxError::POSTCARD_MAX_SIZE, RxError::POSTCARD_MAX_SIZE);
 }
 
 const PAYLOAD_SIZE: usize = 9;
