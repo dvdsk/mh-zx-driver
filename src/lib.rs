@@ -218,8 +218,10 @@ where
             .write_all(&commands::READ_CO2)
             .await
             .map_err(Error::WritingToUart)?;
+        defmt::trace!("flushing uart");
         self.uart_tx.flush().await.map_err(Error::FlushingUart)?;
 
+        defmt::trace!("reading uart");
         let mut buf = [0u8; PAYLOAD_SIZE];
         self.uart_rx
             .read_exact(&mut buf)
@@ -228,6 +230,7 @@ where
                 ReadExactError::UnexpectedEof => Error::ReadingEOF,
                 ReadExactError::Other(e) => Error::Reading(e),
             })?;
+        defmt::trace!("checking packet checksum");
         if !checksum_valid(&buf) {
             return Err(Error::InvalidChecksum);
         }
