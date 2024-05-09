@@ -196,7 +196,12 @@ where
     Rx: Read,
     Rx::Error: defmt::Format,
 {
-    //! Constructs the [`Sensor`](struct.Sensor.html) interface from 2 'halves' of UART.
+    /// Constructs the [`Sensor`](struct.Sensor.html) interface from 2 'halves' of UART.
+    /// # Warning, take care to setup the UART with the correct settings:
+    /// - Baudrate: 9600
+    /// - Date bits: 8 bits
+    /// - Stop bits: 1 bit 
+    /// - Calibrate byte: no
     pub fn from_tx_rx(uart_tx: Tx, uart_rx: Rx) -> MHZ<Tx, Rx> {
         MHZ { uart_tx, uart_rx }
     }
