@@ -1,8 +1,11 @@
 #![no_std]
 #![doc = include_str!("../README.md")]
 
+use core::cmp::Ordering;
 use core::fmt;
+use defmt::debug;
 use embedded_io_async::{Read, ReadExactError, Write};
+use heapless::Vec;
 
 #[derive(Debug)]
 #[cfg_attr(feature = "thiserror", derive(thiserror::Error))]
@@ -67,11 +70,11 @@ where
 {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Error::InvalidChecksum, Error::InvalidChecksum) => true,
-            (Error::InvalidPacket, Error::InvalidPacket) => true,
-            (Error::WritingToUart(e), Error::WritingToUart(e2)) => e == e2,
-            (Error::FlushingUart(e), Error::FlushingUart(e2)) => e == e2,
-            (Error::ReadingEOF, Error::ReadingEOF) => true,
+            (Error::ReadingEOF, Error::ReadingEOF)
+            | (Error::InvalidChecksum, Error::InvalidChecksum)
+            | (Error::InvalidPacket, Error::InvalidPacket) => true,
+            (Error::WritingToUart(e), Error::WritingToUart(e2))
+            | (Error::FlushingUart(e), Error::FlushingUart(e2)) => e == e2,
             (Error::Reading(e), Error::Reading(e2)) => e == e2,
             (_, _) => false,
         }
@@ -119,7 +122,7 @@ pub struct Measurement {
     pub temp: u8,
     /// If ABC is turned on - counter in "ticks" within a calibration cycle.
     pub calib_ticks: u8,
-    /// If ABC is turned on - the nuumber of performed calibration cycles.
+    /// If ABC is turned on - the number of performed calibration cycles.
     pub calib_cycles: u8,
 }
 
@@ -189,6 +192,83 @@ pub struct MHZ<Tx, Rx> {
     uart_rx: Rx,
 }
 
+/// reads a whole package, if the start of a next package is already
+/// available skip the just read package and finish reading that instead
+async fn read_package<Tx, Rx>(
+    rx: &mut Rx,
+) -> Result<[u8; PAYLOAD_SIZE], Error<Tx::Error, Rx::Error>>
+where
+    Tx: Write,
+    Tx::Error: defmt::Format,
+    Rx: Read,
+    Rx::Error: defmt::Format,
+{
+    // make sure we cant read multiple packages
+    let mut buf = [0u8; PAYLOAD_SIZE + 5];
+    let mut start_of_package: Vec<u8, PAYLOAD_SIZE> = Vec::new();
+    let n = rx.read(&mut buf).await.map_err(Error::Reading)?;
+    if n == 0 {
+        return Err(Error::ReadingEOF);
+    }
+
+    loop {
+        let mut start = buf
+            .iter()
+            .take(n) // limit to what was actually read
+            .skip_while(|byte| **byte != 0xff)
+            .copied()
+            .peekable();
+
+        start_of_package.extend(start.by_ref().take(PAYLOAD_SIZE));
+        if start_of_package.is_empty() {
+            let n = rx.read(&mut buf).await.map_err(Error::Reading)?;
+            if n == 0 {
+                return Err(Error::ReadingEOF);
+            } else {
+                continue;
+            }
+        }
+
+        if start_of_package.len() == PAYLOAD_SIZE {
+            return Ok(start_of_package
+                .into_array()
+                .expect("just verified package is filled"));
+        }
+
+        if start.peek().is_some() {
+            let new_start = start.skip_while(|byte| *byte != 0xff).take(PAYLOAD_SIZE);
+            start_of_package.clear();
+            start_of_package.extend(new_start);
+        }
+
+        let mut needed = PAYLOAD_SIZE - start_of_package.len();
+        while needed > 0 {
+            let n = rx.read(&mut buf).await.map_err(Error::Reading)?;
+            match n.cmp(&needed) {
+                Ordering::Less => {
+                    start_of_package
+                        .extend_from_slice(&buf[..n])
+                        .expect("n is less then left capacity");
+                    needed -= n;
+                }
+                Ordering::Equal => {
+                    start_of_package
+                        .extend_from_slice(&buf[..n])
+                        .expect("n is the same length as left capacity");
+                    return Ok(start_of_package
+                        .into_array()
+                        .expect("just verified package is filled"));
+                }
+                Ordering::Greater => {
+                    debug!("skipping outdated package");
+                    start_of_package.clear();
+                    continue;
+                }
+            }
+        }
+    }
+}
+
 impl<Tx, Rx> MHZ<Tx, Rx>
 where
     Tx: Write,
@@ -200,7 +280,7 @@ where
     /// # Warning, take care to setup the UART with the correct settings:
     /// - Baudrate: 9600
     /// - Date bits: 8 bits
-    /// - Stop bits: 1 bit 
+    /// - Stop bits: 1 bit
     /// - Calibrate byte: no
     pub fn from_tx_rx(uart_tx: Tx, uart_rx: Rx) -> MHZ<Tx, Rx> {
         MHZ { uart_tx, uart_rx }
@@ -222,19 +302,13 @@ where
         self.uart_tx.flush().await.map_err(Error::FlushingUart)?;
 
         defmt::trace!("reading uart");
-        let mut buf = [0u8; PAYLOAD_SIZE];
-        self.uart_rx
-            .read_exact(&mut buf)
-            .await
-            .map_err(|e| match e {
-                ReadExactError::UnexpectedEof => Error::ReadingEOF,
-                ReadExactError::Other(e) => Error::Reading(e),
-            })?;
+        let package = read_package::<Tx, Rx>(&mut self.uart_rx).await?;
+
         defmt::trace!("checking packet checksum");
-        if !checksum_valid(&buf) {
+        if !checksum_valid(&package) {
             return Err(Error::InvalidChecksum);
         }
-        Measurement::parse_response(buf)
+        Measurement::parse_response(package)
     }
 
     pub async fn read_co2_raw(&mut self) -> Result<RawMeasurement, Error<Tx::Error, Rx::Error>> {
