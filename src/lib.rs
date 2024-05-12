@@ -6,6 +6,7 @@ use embedded_io_async::{Read, ReadExactError, Write};
 mod error;
 pub use error::Error;
 mod measurement;
+pub use measurement::{Measurement, RawMeasurement};
 mod read_package;
 use read_package::read_package;
 

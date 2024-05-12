@@ -1,5 +1,5 @@
 use core::cmp::Ordering;
-use defmt::{debug, warn};
+use defmt::debug;
 use embedded_io_async::{Read, Write};
 use heapless::Vec;
 
@@ -38,7 +38,6 @@ where
         // this we know contains a body
         let mut body = &buf[offset..n];
         while needed > 0 {
-            defmt::info!("body len: {}, needed: {}", body.len(), needed);
             match body.len().cmp(&needed) {
                 Ordering::Equal => {
                     package
