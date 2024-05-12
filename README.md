@@ -6,12 +6,12 @@ A fork of `https://github.com/xaep/mh-zx-driver` adapting the project to work
 with embedded-io-async.
 
 ## Example
-```rust
+```rust,compile_fail
 // assume you have some embedded hal implementation giving you
 // a tx and rx object.
 let (tx, rx) = uart.split();
 let mut sensor = Sensor::from_tx_rx(tx, rx);
-let measurement = sensor.read().unwrap();
+let measurement = sensor.read().await.unwrap();
 println!("co2 concentration: {}ppm", measurement.co2);
 ```
 
