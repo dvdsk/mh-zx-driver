@@ -28,24 +28,18 @@ where
             return Err(Error::ReadingEOF);
         }
 
-        dbg!(n);
-        dbg!(buf);
         let package_start = buf.iter().rev().skip_while(|byte| **byte != 0xff).count();
         let offset = if package_start == 0 {
-            dbg!("no package start found");
             continue;
         } else {
             package_start - 1
         };
-        dbg!(offset);
 
         // this we know contains a body
         let mut body = &buf[offset..n];
-        dbg!(body);
-
         while needed > 0 {
             defmt::info!("body len: {}, needed: {}", body.len(), needed);
-            match dbg!(body.len().cmp(&needed)) {
+            match body.len().cmp(&needed) {
                 Ordering::Equal => {
                     package
                         .extend_from_slice(&body[..])
@@ -65,26 +59,20 @@ where
                         return Err(Error::ReadingEOF);
                     }
                     body = &buf[..n];
-                    dbg!(body);
                 }
                 Ordering::Greater => {
                     debug!("skipping outdated package");
-                    dbg!("skipping outdated package");
                     package.clear();
                     needed = PAYLOAD_SIZE;
                     // limit search to new packages at the end of the body
                     body = &body[body.len().saturating_sub(PAYLOAD_SIZE)..];
-                    dbg!(body);
                     let newest_starts = body.iter().rev().skip_while(|byte| **byte != 0xff).count();
-                    dbg!(newest_starts);
                     // no package start in body
                     if newest_starts == 0 {
-                        dbg!("no package start found");
                         break;
                     } else {
                         body = &body[newest_starts - 1..];
                     }
-                    dbg!(body);
                 }
             }
         } // break out of this
